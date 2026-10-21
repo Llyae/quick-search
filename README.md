@@ -1,6 +1,6 @@
 # Quick Search
 
-A search bar for Windows that's always one key combo away. Press **Alt+Shift+Space** anywhere, type, and press **Enter**. The search opens as a new tab in your default browser (or starts the browser if it isn't open).
+A search bar for Windows that's always one key combo away. Press **Alt+Shift+Space** anywhere, type a search or a link, and press **Enter**. It opens as a new tab in your default browser (or starts the browser if it isn't open).
 
 ![The search bar, ready to search google.com](docs/bar.png)
 
@@ -13,16 +13,17 @@ Start your search with a shortcut word to search a different site. The tag on th
 | Key | What it does |
 | --- | --- |
 | Alt+Shift+Space | Open or close the bar |
-| Enter | Search |
+| Enter | Search, or open the link |
 | Esc, or click anywhere else | Close the bar |
 
-Built-in shortcut words:
-
-| Type | Searches |
+| Type | What Enter does |
 | --- | --- |
-| `yt cats` | YouTube |
-| `w cats` | Wikipedia |
-| `gh cats` | GitHub |
+| `cats` | Searches Google |
+| `yt cats` | Searches YouTube (`w` searches Wikipedia, `gh` GitHub) |
+| `yt` | Opens youtube.com |
+| `reddit.com` or `github.com/Llyae` | Opens that page |
+
+Common endings like `.com`, `.org`, `.io`, `.dev` and `.co.uk` count as links, so `node.js` is still searched. Start with `https://` to open any other address.
 
 The magnifier icon by the clock opens the bar on a left-click. Right-click it for **Settings** and **Quit**.
 

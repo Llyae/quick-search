@@ -65,22 +65,59 @@ namespace QuickSearch
             query = (text ?? "").Trim();
             int space = query.IndexOf(' ');
             string shortcut;
-            if (space > 0 && Shortcuts.TryGetValue(query.Substring(0, space), out shortcut))
+            if (Shortcuts.TryGetValue(space > 0 ? query.Substring(0, space) : query, out shortcut))
             {
-                query = query.Substring(space + 1).Trim();
+                query = space > 0 ? query.Substring(space + 1).Trim() : "";
                 return shortcut;
             }
             return Engine;
         }
 
-        // The address to open for what was typed, or null if there's nothing to search or the address isn't a web link.
+        // The address to open for what was typed: a typed link, a shortcut word's home page, or a search.
+        // Null if there's nothing to do or the address isn't a web link.
         public string BuildUrl(string text)
         {
+            var link = AsLink(text);
+            if (link != null) return link;
             string query;
             var template = PickAddress(text, out query);
-            if (query.Length == 0 || !IsWebAddress(template)) return null;
+            if (!IsWebAddress(template)) return null;
+            if (query.Length == 0) return (text ?? "").Trim().Length == 0 ? null : HomePage(template); // a shortcut word on its own
             var q = Uri.EscapeDataString(query);
             return template.Contains("%s") ? template.Replace("%s", q) : template + q;
+        }
+
+        // Site name for the tag on the bar: where Enter will go.
+        public string Destination(string text)
+        {
+            string query;
+            return SiteName(AsLink(text) ?? PickAddress(text, out query));
+        }
+
+        // shortcut: only these endings count as typed addresses (so "readme.md" is searched); switch to the full IANA list if people hit misses.
+        static readonly string[] LinkEndings =
+        {
+            "com", "org", "net", "edu", "gov", "io", "dev", "app", "ai", "co", "me", "tv", "gg", "xyz", "info",
+            "uk", "us", "ca", "au", "nz", "ie", "de", "fr", "nl", "eu", "jp", "ly", "so", "sh", "to", "fm", "page", "site", "blog",
+        };
+
+        // "reddit.com", "github.com/x", "www.x.y" or a full http(s) link -> the address to open. Null means search it instead.
+        public static string AsLink(string text)
+        {
+            var t = (text ?? "").Trim();
+            if (t.Length == 0 || t.Contains(" ")) return null;
+            bool full = IsWebAddress(t);
+            if (!full && t.Contains("@")) return null; // an email address, not a site
+            Uri uri;
+            if (!Uri.TryCreate(full ? t : "https://" + t, UriKind.Absolute, out uri)) return null;
+            int dot = uri.Host.LastIndexOf('.');
+            bool known = dot > 0 && Array.IndexOf(LinkEndings, uri.Host.Substring(dot + 1)) >= 0;
+            return full || known || uri.Host.StartsWith("www.") ? uri.AbsoluteUri : null;
+        }
+
+        static string HomePage(string address)
+        {
+            return new Uri(address.Replace("%s", "")).GetLeftPart(UriPartial.Authority) + "/";
         }
 
         // Only web links, so a settings file can never make the bar launch a program.

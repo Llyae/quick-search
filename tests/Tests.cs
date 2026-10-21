@@ -29,8 +29,26 @@ namespace QuickSearch
             Same("https://www.google.com/search?q=%F0%9F%90%B1", c.BuildUrl("\U0001F431"), "emoji escaped");
             Same("https://www.youtube.com/results?search_query=cats%20dogs", c.BuildUrl("yt cats dogs"), "shortcut word");
             Same("https://www.youtube.com/results?search_query=cats", c.BuildUrl("YT   cats"), "shortcut ignores case and extra spaces");
-            Same("https://www.google.com/search?q=yt", c.BuildUrl("yt"), "shortcut word alone is a normal search");
+            Same("https://www.youtube.com/", c.BuildUrl("yt"), "shortcut word alone opens the site");
+            Same("https://en.wikipedia.org/", c.BuildUrl(" W "), "shortcut word alone ignores case and spaces");
             Same("https://www.google.com/search?q=ytx%20cats", c.BuildUrl("ytx cats"), "only whole words are shortcuts");
+
+            Same("https://reddit.com/", c.BuildUrl("reddit.com"), "typed address opens directly");
+            Same("https://github.com/Llyae", c.BuildUrl("github.com/Llyae"), "typed address with a path");
+            Same("https://bbc.co.uk/news", c.BuildUrl("BBC.co.uk/news"), "two-part ending");
+            Same("https://www.example.museum/", c.BuildUrl("www.example.museum"), "www. always counts as an address");
+            Same("https://example.com/a?b=c", c.BuildUrl("https://example.com/a?b=c"), "full https link kept");
+            Same("http://localhost:3000/", c.BuildUrl("http://localhost:3000"), "full http link kept");
+            Same("https://www.google.com/search?q=node.js", c.BuildUrl("node.js"), "file-like name is searched");
+            Same("https://www.google.com/search?q=readme.md", c.BuildUrl("readme.md"), "uncommon ending is searched");
+            Same("https://www.google.com/search?q=me%40gmail.com", c.BuildUrl("me@gmail.com"), "email address is searched");
+            Same("https://www.google.com/search?q=3.14", c.BuildUrl("3.14"), "number is searched");
+            Same("https://www.google.com/search?q=reddit.com%20tips", c.BuildUrl("reddit.com tips"), "address plus words is searched");
+            Same("https://en.wikipedia.org/w/index.php?search=github.com", c.BuildUrl("w github.com"), "shortcut word wins over address");
+            Same("https://www.google.com/search?q=javascript%3Aalert(1)", c.BuildUrl("javascript:alert(1)"), "script link is searched, never opened");
+            Same("reddit.com", c.Destination("reddit.com/r/windows"), "tag shows typed address site");
+            Same("youtube.com", c.Destination("yt"), "tag shows shortcut site for word alone");
+            Same("google.com", c.Destination("node.js"), "tag shows engine for searches");
 
             c.Engine = "https://example.com/find/";
             Same("https://example.com/find/x%20y", c.BuildUrl("x y"), "address without %s gets text appended");

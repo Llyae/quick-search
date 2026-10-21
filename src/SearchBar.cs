@@ -96,8 +96,7 @@ namespace QuickSearch
 
         void UpdateTag()
         {
-            string query;
-            var site = Config.SiteName(Config.PickAddress(input.Text, out query));
+            var site = Config.Destination(input.Text);
             tag.Text = site ?? "Fix the search address in Settings";
             tag.Fill = site == null ? Color.FromArgb(0xC4, 0x31, 0x4B) : dark ? Color.FromArgb(0xF2, 0xB3, 0x3D) : Color.FromArgb(0xF5, 0xC4, 0x43);
             tag.ForeColor = site == null ? Color.White : Color.FromArgb(0x2E, 0x21, 0x00);
@@ -111,10 +110,9 @@ namespace QuickSearch
         void SetPlaceholder()
         {
             var words = new List<string>(Config.Shortcuts.Keys);
-            var cue = "Search the web";
-            if (words.Count == 1) cue += ", or start with " + words[0];
-            if (words.Count > 1) cue += ", or start with " + string.Join(", ", words.GetRange(0, words.Count - 1)) + " or " + words[words.Count - 1];
-            input.Hint = cue;
+            var last = words.Count > 0 ? words[words.Count - 1] : "";
+            var list = words.Count > 1 ? string.Join(", ", words.GetRange(0, words.Count - 1)) + " or " + last : last;
+            input.Hint = words.Count == 0 ? "Search or type a link" : "Search, type a link, or start with " + list;
             input.Invalidate();
         }
 
