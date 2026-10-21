@@ -12,6 +12,7 @@ namespace QuickSearch
         readonly ComboBox engine = new ComboBox();
         readonly TextBox address = new TextBox();
         readonly TextBox bookmarks, shortcuts;
+        readonly CheckBox suggestions = new CheckBox();
         readonly CheckBox startup = new CheckBox();
         readonly Label error = new Label();
         readonly TableLayoutPanel layout = new TableLayoutPanel();
@@ -54,10 +55,15 @@ namespace QuickSearch
             bookmarks = ListBox(Config.BookmarksText(config.Bookmarks));
             shortcuts = ListBox(Config.ShortcutsText(config.Shortcuts));
 
+            suggestions.Text = "Show Google suggestions as I type";
+            suggestions.AutoSize = true;
+            suggestions.Checked = config.WebSuggestions;
+            suggestions.Margin = new Padding(0, S(14), 0, 0);
+
             startup.Text = "Start with Windows";
             startup.AutoSize = true;
             startup.Checked = Program.StartsWithWindows;
-            startup.Margin = new Padding(0, S(14), 0, 0);
+            startup.Margin = new Padding(0, S(10), 0, 0);
 
             error.AutoSize = true;
             error.MaximumSize = new Size(width, 0);
@@ -83,6 +89,7 @@ namespace QuickSearch
                 Help("One per line: a name, a space, then its link. They show above the search box; Ctrl+1 to Ctrl+9 open the first nine."));
             Add(Heading("Shortcut words", S(14)), shortcuts,
                 Help("One per line: a word, a space, then its search address. Type the word before your search to use it, like \"yt cats\"."));
+            Add(suggestions, Help("Google sees what you type before you press Enter. Matching bookmarks show either way."));
             Add(startup, error, buttons);
             foreach (Control c in new Control[] { hotkey, engine, address, bookmarks, shortcuts }) { c.Width = width; c.Margin = new Padding(0, S(4), 0, 0); }
             Controls.Add(layout);
@@ -149,6 +156,7 @@ namespace QuickSearch
             var next = new Config();
             next.Hotkey = hotkey.Text;
             next.Engine = address.Text.Trim();
+            next.WebSuggestions = suggestions.Checked;
             var problem = Config.IsWebAddress(next.Engine) ? null : "The search address must start with https://";
             if (problem == null) problem = Config.ParseBookmarks(bookmarks.Text, next.Bookmarks);
             if (problem == null) problem = Config.ParseShortcuts(shortcuts.Text, next.Shortcuts);

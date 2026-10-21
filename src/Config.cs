@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 namespace QuickSearch
@@ -22,6 +23,7 @@ namespace QuickSearch
 
         public string Hotkey = "Alt+Shift+Space";
         public string Engine = Engines[0][1];
+        public bool WebSuggestions = true;
         public SortedDictionary<string, string> Shortcuts = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             { "gh", "https://github.com/search?q=%s" },
@@ -54,6 +56,7 @@ namespace QuickSearch
                 var val = line.Substring(eq + 1).Trim();
                 if (key == "hotkey") c.Hotkey = val;
                 else if (key == "engine") c.Engine = val;
+                else if (key == "suggestions") c.WebSuggestions = val != "off";
                 else if (key.StartsWith("shortcut.")) c.Shortcuts[key.Substring(9)] = val;
                 else if (key == "bookmark") { var b = ParseBookmark(val); if (b != null) c.Bookmarks.Add(b); }
             }
@@ -66,6 +69,7 @@ namespace QuickSearch
             sb.AppendLine("# Quick Search settings. %s marks where your search text goes.");
             sb.AppendLine("hotkey=" + Hotkey);
             sb.AppendLine("engine=" + Engine);
+            sb.AppendLine("suggestions=" + (WebSuggestions ? "on" : "off"));
             foreach (var s in Shortcuts) sb.AppendLine("shortcut." + s.Key + "=" + s.Value);
             foreach (var b in Bookmarks) sb.AppendLine("bookmark=" + b[0] + " " + b[1]);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -105,6 +109,43 @@ namespace QuickSearch
         {
             string query;
             return SiteName(AsLink(text) ?? PickAddress(text, out query));
+        }
+
+        // Rows for the dropdown: bookmarks whose name or site matches, then Google's suggestions, up to 6 in all.
+        // shortcut: web suggestions must start with the typed text, which drops replies to older keystrokes
+        // (and Google's rare spelling fixes); track which text each reply was for if those are missed.
+        public List<Suggestion> Suggest(string text, List<string> web)
+        {
+            var rows = new List<Suggestion>();
+            var t = (text ?? "").Trim();
+            if (t.Length == 0) return rows;
+            foreach (var b in Bookmarks)
+            {
+                var site = SiteName(b[1]) ?? "";
+                if (rows.Count < 3 && (b[0].IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0 || site.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0))
+                    rows.Add(new Suggestion { Label = b[0], Detail = site, Text = b[1], Link = b[1] });
+            }
+            string query;
+            PickAddress(t, out query);
+            var prefix = t.Substring(0, t.Length - query.Length); // "yt " when a shortcut word is in front
+            foreach (var s in web)
+                if (rows.Count < 6 && s.StartsWith(query, StringComparison.OrdinalIgnoreCase) && !s.Equals(query, StringComparison.OrdinalIgnoreCase))
+                    rows.Add(new Suggestion { Label = s, Text = prefix + s });
+            return rows;
+        }
+
+        // Google's reply: ["cats", ["cats movie", "cats musical", ...]] -> the suggestions. Empty for anything else.
+        public static List<string> ParseSuggestions(string json)
+        {
+            var list = new List<string>();
+            try
+            {
+                var reply = new JavaScriptSerializer().DeserializeObject(json) as object[];
+                var items = reply != null && reply.Length > 1 ? reply[1] as object[] : null;
+                if (items != null) foreach (var s in items) if (s is string) list.Add((string)s);
+            }
+            catch (Exception) { } // it came off the internet: a bad reply just means no suggestions
+            return list;
         }
 
         // shortcut: only these endings count as typed addresses (so "readme.md" is searched); switch to the full IANA list if people hit misses.
@@ -248,5 +289,13 @@ namespace QuickSearch
             if ((keyData & Keys.Shift) != 0) s += "Shift+";
             return s + (keyData & Keys.KeyCode);
         }
+    }
+
+    // One dropdown row. Text is what goes in the box (and through BuildUrl); Link is set for bookmarks, for their icon.
+    public class Suggestion
+    {
+        public string Label, Detail, Text, Link;
+
+        public override string ToString() { return Detail == null ? Label : Label + ", " + Detail; } // what screen readers say
     }
 }

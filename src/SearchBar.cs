@@ -3,24 +3,32 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
+using System.Net;
+using System.Text;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
 namespace QuickSearch
 {
-    // The pop-up bar: bookmarks row on top, then a tag showing which site Enter goes to and the text box.
+    // The pop-up bar: bookmarks row on top, then the search row (destination tag + text box), then suggestions.
     class SearchBar : Form
     {
         public Config Config;
         readonly HintTextBox input = new HintTextBox();
         readonly SiteTag tag = new SiteTag();
         readonly FlowLayoutPanel bookmarks = new FlowLayoutPanel();
+        readonly ListBox list = new ListBox(); // suggestions; a real list box so screen readers can read the rows
         readonly ToolTip tip = new ToolTip();
+        readonly Timer debounce = new Timer { Interval = 150 }; // ask Google once typing pauses, not on every key
         readonly Font bookmarkFont;
         readonly float scale;
+        List<string> web = new List<string>(); // Google's latest suggestions
+        WebClient fetch; // the request in flight, if any
+        string fetched; // the text Google was last asked about
         Config built; // the settings the bookmarks row was last built from
-        int bandTop; // where the search row starts, below the bookmarks
-        Color line;
+        int bandTop, bandBottom; // the search row, between bookmarks and suggestions
+        Color line, rowFill, muted;
         bool dark;
 
         public SearchBar(Config config)
@@ -42,11 +50,24 @@ namespace QuickSearch
             bookmarks.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             bookmarks.MaximumSize = new Size(ClientSize.Width, 0); // wraps onto more lines instead of growing wider
             bookmarks.Padding = new Padding(S(12), S(10), S(12), S(8));
+            list.DrawMode = DrawMode.OwnerDrawFixed;
+            list.ItemHeight = S(36);
+            list.BorderStyle = BorderStyle.None;
+            list.IntegralHeight = false;
+            list.TabStop = false;
+            list.Visible = false;
+            list.Font = PickFont("Segoe UI Variable Text", "Segoe UI", 10.5f);
+            list.DrawItem += DrawRow;
+            list.MouseMove += (s, e) => { int i = list.IndexFromPoint(e.Location); if (i >= 0 && i != list.SelectedIndex) list.SelectedIndex = i; };
+            list.MouseClick += delegate { Pick(); };
+            list.SelectedIndexChanged += delegate { UpdateTag(); }; // the tag follows the highlighted row
             Controls.Add(bookmarks);
             Controls.Add(tag);
             Controls.Add(input);
+            Controls.Add(list);
 
-            input.TextChanged += delegate { UpdateTag(); };
+            input.TextChanged += delegate { ShowSuggestions(); debounce.Stop(); debounce.Start(); };
+            debounce.Tick += delegate { debounce.Stop(); FetchSuggestions(); };
             input.KeyDown += OnInputKey;
             tag.Click += delegate { input.Focus(); };
             Deactivate += delegate { Hide(); };
@@ -61,6 +82,7 @@ namespace QuickSearch
         {
             if (built != Config) BuildBookmarks();
             ApplyTheme(); // picks up a light/dark switch made while the bar was hidden
+            list.Items.Clear(); // suggestions come back once you type
             UpdateTag();
             SetPlaceholder();
             var area = Screen.FromPoint(Cursor.Position).WorkingArea;
@@ -92,12 +114,100 @@ namespace QuickSearch
         void OnInputKey(object sender, KeyEventArgs e)
         {
             int n = e.KeyCode - Keys.D1;
-            if (e.KeyCode == Keys.Enter) Open(Config.BuildUrl(input.Text));
+            if (e.KeyCode == Keys.Enter) Pick();
+            else if (e.KeyCode == Keys.Down || e.KeyCode == Keys.Up)
+            {
+                int i = list.SelectedIndex + (e.KeyCode == Keys.Down ? 1 : -1);
+                if (i >= -1 && i < list.Items.Count) list.SelectedIndex = i; // -1 = back to what you typed
+            }
             else if (e.KeyCode == Keys.Escape) Hide();
             else if (e.KeyData == (Keys.Control | Keys.Back)) DeleteWordBack(); // the classic text box types a box character instead
             else if (e.Modifiers == Keys.Control && n >= 0 && n < 9 && n < Config.Bookmarks.Count) Open(Config.Bookmarks[n][1]);
             else return;
             e.SuppressKeyPress = true;
+        }
+
+        // Single-line text boxes never see Tab (it moves focus), so it's caught here: Tab copies a suggestion into the box.
+        protected override bool ProcessDialogKey(Keys keyData)
+        {
+            if ((keyData & Keys.KeyCode) != Keys.Tab) return base.ProcessDialogKey(keyData);
+            var row = (list.SelectedItem ?? (list.Items.Count > 0 ? list.Items[0] : null)) as Suggestion;
+            if (row != null)
+            {
+                input.Text = row.Text;
+                input.SelectionStart = input.Text.Length;
+            }
+            return true; // focus stays in the box either way
+        }
+
+        // Enter or click: the highlighted suggestion if there is one, otherwise what's typed.
+        void Pick()
+        {
+            var row = list.SelectedItem as Suggestion;
+            Open(Config.BuildUrl(row != null ? row.Text : input.Text));
+        }
+
+        void ShowSuggestions()
+        {
+            list.BeginUpdate();
+            list.Items.Clear();
+            foreach (var row in Config.Suggest(input.Text, Config.WebSuggestions ? web : new List<string>())) list.Items.Add(row);
+            list.EndUpdate();
+            UpdateTag();
+        }
+
+        void FetchSuggestions()
+        {
+            string query;
+            Config.PickAddress(input.Text, out query);
+            if (!Config.WebSuggestions || query.Length == 0 || query == fetched) return;
+            fetched = query;
+            if (fetch != null) fetch.CancelAsync();
+            var client = fetch = new WebClient { Encoding = Encoding.UTF8 };
+            client.DownloadStringCompleted += (s, e) => // raised back on the UI thread
+            {
+                client.Dispose();
+                if (e.Cancelled || e.Error != null || client != fetch) return; // offline or superseded: keep what's shown
+                fetch = null;
+                web = Config.ParseSuggestions(e.Result);
+                ShowSuggestions();
+            };
+            client.DownloadStringAsync(new Uri("https://suggestqueries.google.com/complete/search?client=firefox&ie=utf-8&oe=utf-8&hl="
+                + CultureInfo.CurrentUICulture.TwoLetterISOLanguageName + "&q=" + Uri.EscapeDataString(query)));
+        }
+
+        void DrawRow(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            var row = (Suggestion)list.Items[e.Index];
+            var g = e.Graphics;
+            var b = e.Bounds;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var back = new SolidBrush(BackColor)) g.FillRectangle(back, b);
+            if ((e.State & DrawItemState.Selected) != 0)
+                using (var fill = new SolidBrush(rowFill))
+                using (var path = Shapes.Round(new Rectangle(b.X, b.Y + S(2), b.Width - 1, b.Height - S(4) - 1), S(16)))
+                    g.FillPath(fill, path);
+            int icon = S(16);
+            var box = new Rectangle(b.X + S(10), b.Y + (b.Height - icon) / 2, icon, icon);
+            var img = row.Link != null ? SiteIcons.Cached(row.Link) : null;
+            if (img != null)
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.DrawImage(img, box);
+            }
+            else if (row.Link == null) // magnifier for searches
+                using (var pen = new Pen(muted, S(2) * 0.8f))
+                {
+                    int d = icon * 5 / 8;
+                    g.DrawEllipse(pen, box.X + 1, box.Y + 1, d, d);
+                    g.DrawLine(pen, box.X + 1 + d * 0.85f, box.Y + 1 + d * 0.85f, box.Right - 1, box.Bottom - 1);
+                }
+            int x = box.Right + S(12);
+            int detail = row.Detail == null ? 0 : TextRenderer.MeasureText(row.Detail, list.Font).Width;
+            var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+            TextRenderer.DrawText(g, row.Label, list.Font, new Rectangle(x, b.Y, b.Right - x - detail - S(24), b.Height), input.ForeColor, flags | TextFormatFlags.EndEllipsis);
+            if (detail > 0) TextRenderer.DrawText(g, row.Detail, list.Font, new Rectangle(b.Right - detail - S(12), b.Y, detail, b.Height), muted, flags);
         }
 
         void Open(string url)
@@ -128,7 +238,8 @@ namespace QuickSearch
 
         void UpdateTag()
         {
-            var site = Config.Destination(input.Text);
+            var row = list.SelectedItem as Suggestion;
+            var site = Config.Destination(row != null ? row.Text : input.Text);
             tag.Text = site ?? "Fix the search address in Settings";
             tag.Fill = site == null ? Color.FromArgb(0xC4, 0x31, 0x4B) : dark ? Color.FromArgb(0xF2, 0xB3, 0x3D) : Color.FromArgb(0xF5, 0xC4, 0x43);
             tag.ForeColor = site == null ? Color.White : Color.FromArgb(0x2E, 0x21, 0x00);
@@ -137,15 +248,22 @@ namespace QuickSearch
             tag.Bounds = new Rectangle(pad, bandTop + (band - h) / 2, TextRenderer.MeasureText(tag.Text, tag.Font).Width + S(18), h);
             input.Location = new Point(tag.Right + S(12), bandTop + (band - input.Height) / 2);
             input.Width = ClientSize.Width - input.Left - pad;
-            ClientSize = new Size(ClientSize.Width, bandTop + band);
+            bandBottom = bandTop + band;
+            list.Visible = list.Items.Count > 0;
+            list.Bounds = new Rectangle(S(6), bandBottom + S(5), ClientSize.Width - S(12), list.Items.Count * list.ItemHeight);
+            ClientSize = new Size(ClientSize.Width, list.Visible ? list.Bottom + S(5) : bandBottom);
             tag.Invalidate();
-            Invalidate(); // divider line
+            Invalidate(); // divider lines
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            if (bandTop > 0) using (var pen = new Pen(line)) e.Graphics.DrawLine(pen, 0, bandTop, ClientSize.Width, bandTop);
+            using (var pen = new Pen(line))
+            {
+                if (bandTop > 0) e.Graphics.DrawLine(pen, 0, bandTop, ClientSize.Width, bandTop);
+                if (list.Visible) e.Graphics.DrawLine(pen, 0, bandBottom, ClientSize.Width, bandBottom);
+            }
         }
 
         void SetPlaceholder()
@@ -166,7 +284,9 @@ namespace QuickSearch
             input.ForeColor = dark ? Color.FromArgb(0xEE, 0xF0, 0xF4) : Color.FromArgb(0x1C, 0x1F, 0x26);
             input.HintColor = dark ? Color.FromArgb(0x9A, 0xA0, 0xAC) : Color.FromArgb(0x6B, 0x72, 0x80);
             line = dark ? Color.FromArgb(0x34, 0x38, 0x42) : Color.FromArgb(0xE6, 0xE8, 0xEC);
-            bookmarks.BackColor = BackColor;
+            rowFill = dark ? Color.FromArgb(0x30, 0x35, 0x40) : Color.FromArgb(0xEE, 0xF0, 0xF3);
+            muted = input.HintColor;
+            bookmarks.BackColor = list.BackColor = BackColor;
             foreach (BookmarkButton b in bookmarks.Controls)
             {
                 b.ForeColor = input.ForeColor;
@@ -230,6 +350,21 @@ namespace QuickSearch
         }
     }
 
+    static class Shapes
+    {
+        // Rectangle with rounded corners; d is the corner diameter (the rectangle's height gives a pill).
+        public static GraphicsPath Round(Rectangle r, int d)
+        {
+            var path = new GraphicsPath();
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+
     // Pill-shaped label with the destination site name.
     class SiteTag : Control
     {
@@ -243,15 +378,9 @@ namespace QuickSearch
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            int d = Height - 1;
-            using (var path = new GraphicsPath())
+            using (var path = Shapes.Round(new Rectangle(0, 0, Width - 1, Height - 1), Height - 1))
             using (var brush = new SolidBrush(Fill))
-            {
-                path.AddArc(0, 0, d, d, 90, 180);
-                path.AddArc(Width - 1 - d, 0, d, d, 270, 180);
-                path.CloseFigure();
                 e.Graphics.FillPath(brush, path);
-            }
             TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
         }

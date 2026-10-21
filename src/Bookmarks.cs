@@ -30,17 +30,10 @@ namespace QuickSearch
             var g = e.Graphics;
             g.Clear(Parent.BackColor);
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            int r = Height / 3 * 2, pad = Height / 3, icon = Height * 8 / 15;
-            using (var path = new GraphicsPath())
+            int pad = Height / 3, icon = Height * 8 / 15;
+            using (var path = Shapes.Round(new Rectangle(0, 0, Width - 1, Height - 1), Height * 2 / 3))
             using (var brush = new SolidBrush(hover ? HoverFill : Fill))
-            {
-                path.AddArc(0, 0, r, r, 180, 90);
-                path.AddArc(Width - 1 - r, 0, r, r, 270, 90);
-                path.AddArc(Width - 1 - r, Height - 1 - r, r, r, 0, 90);
-                path.AddArc(0, Height - 1 - r, r, r, 90, 90);
-                path.CloseFigure();
                 g.FillPath(brush, path);
-            }
             var box = new Rectangle(pad, (Height - icon) / 2, icon, icon);
             if (Image != null)
             {
@@ -96,6 +89,14 @@ namespace QuickSearch
                 catch (Exception) { }
             };
             web.DownloadDataAsync(new Uri("https://www.google.com/s2/favicons?sz=64&domain=" + Uri.EscapeDataString(host)));
+        }
+
+        // The icon if it's already loaded, for drawing suggestion rows.
+        public static Image Cached(string link)
+        {
+            Uri uri;
+            Image img;
+            return Uri.TryCreate(link, UriKind.Absolute, out uri) && cache.TryGetValue(uri.Host, out img) ? img : null;
         }
 
         static Image Decode(byte[] bytes)

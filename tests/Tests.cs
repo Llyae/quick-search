@@ -102,6 +102,24 @@ namespace QuickSearch
             Same(null, Config.ParseBookmarks(Config.BookmarksText(plain.Bookmarks), marks), "bookmark box round trip");
             Check(marks.Count == 4 && marks[1][0] == "Gmail" && marks[1][1] == plain.Bookmarks[1][1], "bookmark box round trip keeps order and links");
 
+            var sug = Config.ParseSuggestions("[\"caf\",[\"café near me\",\"cafe \\\"quotes\\\"\",\"caf\\u00e9 au lait\"],[],{}]");
+            Check(sug.Count == 3 && sug[0] == "café near me" && sug[1] == "cafe \"quotes\"" && sug[2] == "café au lait", "suggestion reply parsed with accents and escapes");
+            Check(Config.ParseSuggestions("<html>error</html>").Count == 0, "garbage reply gives no suggestions");
+            Check(Config.ParseSuggestions("{\"a\":1}").Count == 0 && Config.ParseSuggestions("[\"x\"]").Count == 0 && Config.ParseSuggestions("[\"x\",[1,null,\"ok\"]]").Count == 1, "odd reply shapes handled");
+
+            var rows = plain.Suggest("git", new System.Collections.Generic.List<string> { "git", "git commands", "github desktop", "dog" });
+            Check(rows.Count == 3, "suggest: bookmark + matching web results, without the typed text or stale results");
+            Check(rows.Count == 3 && rows[0].Label == "GitHub" && rows[0].Detail == "github.com" && rows[0].Text == "https://github.com/" && rows[0].Link != null, "suggest: matching bookmark comes first");
+            Check(rows.Count == 3 && rows[1].Label == "git commands" && rows[1].Text == "git commands" && rows[1].Link == null, "suggest: web suggestion searches its text");
+            Same("https://github.com/", plain.BuildUrl(rows[0].Text), "suggest: bookmark row opens the bookmark");
+            rows = plain.Suggest("yt  cat", new System.Collections.Generic.List<string> { "cat videos", "cats" });
+            Check(rows.Count == 2 && rows[0].Label == "cat videos" && rows[0].Text == "yt  cat videos", "suggest: shortcut word kept in front of suggestions");
+            Same("https://www.youtube.com/results?search_query=cat%20videos", plain.BuildUrl(rows[0].Text), "suggest: shortcut suggestion searches YouTube");
+            var many = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < 10; i++) many.Add("g" + i);
+            Check(plain.Suggest("g", many).Count == 6, "suggest: at most 6 rows");
+            Check(plain.Suggest("  ", many).Count == 0, "suggest: nothing for blank text");
+
             var path = Path.Combine(Path.GetTempPath(), "quicksearch-test-" + Guid.NewGuid() + ".txt");
             try
             {
@@ -111,6 +129,7 @@ namespace QuickSearch
                 a.Engine = Config.Engines[2][1];
                 a.Shortcuts.Remove("gh");
                 a.Shortcuts["maps"] = "https://www.google.com/maps/search/%s";
+                a.WebSuggestions = false;
                 a.Bookmarks.RemoveAt(0);
                 a.Bookmarks.Add(new[] { "Google Maps", "https://maps.google.com/" });
                 a.Save(path);
@@ -119,6 +138,7 @@ namespace QuickSearch
                 Same("DuckDuckGo", b.EngineName(), "engine survives save");
                 Check(!b.Shortcuts.ContainsKey("gh"), "deleted shortcut stays deleted");
                 Same("https://www.google.com/maps/search/%s", b.Shortcuts.ContainsKey("MAPS") ? b.Shortcuts["MAPS"] : null, "added shortcut survives save");
+                Check(!b.WebSuggestions && new Config().WebSuggestions, "suggestions switch survives save (on by default)");
                 Check(b.Bookmarks.Count == 4 && b.Bookmarks[0][0] == "Gmail" && b.Bookmarks[3][0] == "Google Maps" && b.Bookmarks[3][1] == "https://maps.google.com/", "bookmarks survive save in order");
                 File.WriteAllText(path, "# comment\n\njunk line\nhotkey = Ctrl+Shift+K \nshortcut.x=https://x.test/?q=%s\n");
                 var d = Config.Load(path);
