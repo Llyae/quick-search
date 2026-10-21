@@ -46,9 +46,6 @@ namespace QuickSearch
             input.Font = PickFont("Segoe UI Variable Text", "Segoe UI", 14f);
             input.BorderStyle = BorderStyle.None;
             bookmarkFont = PickFont("Segoe UI Variable Small", "Segoe UI", 9.5f);
-            bookmarks.AutoSize = true;
-            bookmarks.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            bookmarks.MaximumSize = new Size(ClientSize.Width, 0); // wraps onto more lines instead of growing wider
             bookmarks.Padding = new Padding(S(12), S(10), S(12), S(8));
             list.DrawMode = DrawMode.OwnerDrawFixed;
             list.ItemHeight = S(36);
@@ -244,14 +241,16 @@ namespace QuickSearch
             tag.Fill = site == null ? Color.FromArgb(0xC4, 0x31, 0x4B) : dark ? Color.FromArgb(0xF2, 0xB3, 0x3D) : Color.FromArgb(0xF5, 0xC4, 0x43);
             tag.ForeColor = site == null ? Color.White : Color.FromArgb(0x2E, 0x21, 0x00);
             int pad = S(14), h = S(26), band = S(56);
-            bandTop = bookmarks.Visible ? bookmarks.Bottom : 0;
+            // Sized from the content, not .Visible: that reads false while the bar is still hidden, just before it opens.
+            bandTop = Config.Bookmarks.Count > 0 ? bookmarks.GetPreferredSize(new Size(ClientSize.Width, 0)).Height : 0;
+            bookmarks.Bounds = new Rectangle(0, 0, ClientSize.Width, bandTop); // full width, so long rows wrap
             tag.Bounds = new Rectangle(pad, bandTop + (band - h) / 2, TextRenderer.MeasureText(tag.Text, tag.Font).Width + S(18), h);
             input.Location = new Point(tag.Right + S(12), bandTop + (band - input.Height) / 2);
             input.Width = ClientSize.Width - input.Left - pad;
             bandBottom = bandTop + band;
             list.Visible = list.Items.Count > 0;
             list.Bounds = new Rectangle(S(6), bandBottom + S(5), ClientSize.Width - S(12), list.Items.Count * list.ItemHeight);
-            ClientSize = new Size(ClientSize.Width, list.Visible ? list.Bottom + S(5) : bandBottom);
+            ClientSize = new Size(ClientSize.Width, list.Items.Count > 0 ? list.Bottom + S(5) : bandBottom);
             tag.Invalidate();
             Invalidate(); // divider lines
         }
@@ -262,7 +261,7 @@ namespace QuickSearch
             using (var pen = new Pen(line))
             {
                 if (bandTop > 0) e.Graphics.DrawLine(pen, 0, bandTop, ClientSize.Width, bandTop);
-                if (list.Visible) e.Graphics.DrawLine(pen, 0, bandBottom, ClientSize.Width, bandBottom);
+                if (list.Items.Count > 0) e.Graphics.DrawLine(pen, 0, bandBottom, ClientSize.Width, bandBottom);
             }
         }
 
