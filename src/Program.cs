@@ -26,6 +26,7 @@ namespace QuickSearch
                     return;
                 }
                 Native.SetProcessDPIAware();
+                System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12; // off by default for this .NET target; Google needs it
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new App());

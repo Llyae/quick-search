@@ -90,6 +90,18 @@ namespace QuickSearch
             Same(null, Config.ParseShortcuts(Config.ShortcutsText(plain.Shortcuts), parsed), "shortcut box round trip");
             Check(parsed.Count == 3 && parsed["gh"] == plain.Shortcuts["gh"], "shortcut box round trip keeps values");
 
+            Check(plain.Bookmarks.Count == 4 && plain.Bookmarks[0][0] == "YouTube" && plain.Bookmarks[3][0] == "Reddit", "starter bookmarks in order");
+            var marks = new System.Collections.Generic.List<string[]>();
+            Same(null, Config.ParseBookmarks("Google Maps   https://maps.google.com\r\n\r\nReddit reddit.com\r\nhttps://news.ycombinator.com/news", marks), "bookmark box parses");
+            Check(marks.Count == 3, "bookmark box skips blank lines");
+            Check(marks.Count == 3 && marks[0][0] == "Google Maps" && marks[0][1] == "https://maps.google.com/", "bookmark name keeps its spaces");
+            Check(marks.Count == 3 && marks[1][0] == "Reddit" && marks[1][1] == "https://reddit.com/", "bookmark link without https:// accepted");
+            Check(marks.Count == 3 && marks[2][0] == "news.ycombinator.com", "bookmark without a name uses the site name");
+            Same("Bookmark line 2 needs a name, a space, then a link like https://example.com", Config.ParseBookmarks("A https://a.com\r\nNotes readme.md", marks), "bad bookmark link reported by line");
+            Check(Config.ParseBookmarks("Run calc.exe", marks) != null, "program path is not a bookmark");
+            Same(null, Config.ParseBookmarks(Config.BookmarksText(plain.Bookmarks), marks), "bookmark box round trip");
+            Check(marks.Count == 4 && marks[1][0] == "Gmail" && marks[1][1] == plain.Bookmarks[1][1], "bookmark box round trip keeps order and links");
+
             var path = Path.Combine(Path.GetTempPath(), "quicksearch-test-" + Guid.NewGuid() + ".txt");
             try
             {
@@ -99,17 +111,21 @@ namespace QuickSearch
                 a.Engine = Config.Engines[2][1];
                 a.Shortcuts.Remove("gh");
                 a.Shortcuts["maps"] = "https://www.google.com/maps/search/%s";
+                a.Bookmarks.RemoveAt(0);
+                a.Bookmarks.Add(new[] { "Google Maps", "https://maps.google.com/" });
                 a.Save(path);
                 var b = Config.Load(path);
                 Same("Ctrl+Alt+G", b.Hotkey, "hotkey survives save");
                 Same("DuckDuckGo", b.EngineName(), "engine survives save");
                 Check(!b.Shortcuts.ContainsKey("gh"), "deleted shortcut stays deleted");
                 Same("https://www.google.com/maps/search/%s", b.Shortcuts.ContainsKey("MAPS") ? b.Shortcuts["MAPS"] : null, "added shortcut survives save");
+                Check(b.Bookmarks.Count == 4 && b.Bookmarks[0][0] == "Gmail" && b.Bookmarks[3][0] == "Google Maps" && b.Bookmarks[3][1] == "https://maps.google.com/", "bookmarks survive save in order");
                 File.WriteAllText(path, "# comment\n\njunk line\nhotkey = Ctrl+Shift+K \nshortcut.x=https://x.test/?q=%s\n");
                 var d = Config.Load(path);
                 Same("Ctrl+Shift+K", d.Hotkey, "hand-edited file read");
                 Same("Google", d.EngineName(), "missing engine line keeps default");
                 Check(d.Shortcuts.Count == 1, "hand-edited shortcut list replaces defaults");
+                Check(d.Bookmarks.Count == 0, "file without bookmarks keeps the row empty");
             }
             finally { File.Delete(path); }
 

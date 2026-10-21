@@ -29,11 +29,22 @@ namespace QuickSearch
             { "yt", "https://www.youtube.com/results?search_query=%s" },
         };
 
+        // The row above the bar, in the user's order: { name, link }.
+        public List<string[]> Bookmarks = new List<string[]>
+        {
+            new[] { "YouTube", "https://www.youtube.com/" },
+            new[] { "Gmail", "https://mail.google.com/" },
+            new[] { "GitHub", "https://github.com/" },
+            new[] { "Reddit", "https://www.reddit.com/" },
+        };
+
         public static Config Load(string path)
         {
             var c = new Config();
             if (!File.Exists(path)) return c;
-            c.Shortcuts.Clear(); // the file's list replaces the defaults, so deleted shortcuts stay deleted
+            // The file's lists replace the defaults, so deleted shortcuts and bookmarks stay deleted.
+            c.Shortcuts.Clear();
+            c.Bookmarks.Clear();
             foreach (var raw in File.ReadAllLines(path))
             {
                 var line = raw.Trim();
@@ -44,6 +55,7 @@ namespace QuickSearch
                 if (key == "hotkey") c.Hotkey = val;
                 else if (key == "engine") c.Engine = val;
                 else if (key.StartsWith("shortcut.")) c.Shortcuts[key.Substring(9)] = val;
+                else if (key == "bookmark") { var b = ParseBookmark(val); if (b != null) c.Bookmarks.Add(b); }
             }
             return c;
         }
@@ -55,6 +67,7 @@ namespace QuickSearch
             sb.AppendLine("hotkey=" + Hotkey);
             sb.AppendLine("engine=" + Engine);
             foreach (var s in Shortcuts) sb.AppendLine("shortcut." + s.Key + "=" + s.Value);
+            foreach (var b in Bookmarks) sb.AppendLine("bookmark=" + b[0] + " " + b[1]);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             File.WriteAllText(path, sb.ToString());
         }
@@ -156,6 +169,40 @@ namespace QuickSearch
                 if (parts.Length < 2 || parts[0].Contains("=") || !IsWebAddress(parts[1].Trim()))
                     return "Shortcut line " + (i + 1) + " needs a word, a space, then an address starting with https://";
                 into[parts[0]] = parts[1].Trim();
+            }
+            return null;
+        }
+
+        // "Google Maps https://maps.google.com" -> { name, link }. The link is the last word, so names can have spaces.
+        // No name means the site name is used. Null if the link isn't a web address.
+        static string[] ParseBookmark(string line)
+        {
+            line = line.Trim();
+            int space = line.LastIndexOfAny(new[] { ' ', '\t' });
+            var link = AsLink(line.Substring(space + 1));
+            if (link == null) return null;
+            var name = space > 0 ? line.Substring(0, space).Trim() : "";
+            return new[] { name.Length > 0 ? name : SiteName(link), link };
+        }
+
+        public static string BookmarksText(List<string[]> bookmarks)
+        {
+            var sb = new StringBuilder();
+            foreach (var b in bookmarks) sb.Append(b[0] + " " + b[1] + "\r\n");
+            return sb.ToString();
+        }
+
+        // Reads the settings box back. Returns a problem to show the user, or null when every line was fine.
+        public static string ParseBookmarks(string text, List<string[]> into)
+        {
+            into.Clear();
+            var lines = (text ?? "").Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (lines[i].Trim().Length == 0) continue;
+                var b = ParseBookmark(lines[i]);
+                if (b == null) return "Bookmark line " + (i + 1) + " needs a name, a space, then a link like https://example.com";
+                into.Add(b);
             }
             return null;
         }

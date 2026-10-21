@@ -11,7 +11,7 @@ namespace QuickSearch
         readonly TextBox hotkey = new TextBox();
         readonly ComboBox engine = new ComboBox();
         readonly TextBox address = new TextBox();
-        readonly TextBox shortcuts = new TextBox();
+        readonly TextBox bookmarks, shortcuts;
         readonly CheckBox startup = new CheckBox();
         readonly Label error = new Label();
         readonly TableLayoutPanel layout = new TableLayoutPanel();
@@ -51,12 +51,8 @@ namespace QuickSearch
             address.TextChanged += delegate { SyncEngine(); };
             SyncEngine();
 
-            shortcuts.Multiline = true;
-            shortcuts.AcceptsReturn = true;
-            shortcuts.WordWrap = false;
-            shortcuts.ScrollBars = ScrollBars.Both;
-            shortcuts.Height = S(110);
-            shortcuts.Text = Config.ShortcutsText(config.Shortcuts);
+            bookmarks = ListBox(Config.BookmarksText(config.Bookmarks));
+            shortcuts = ListBox(Config.ShortcutsText(config.Shortcuts));
 
             startup.Text = "Start with Windows";
             startup.AutoSize = true;
@@ -83,11 +79,18 @@ namespace QuickSearch
             layout.Dock = DockStyle.Fill;
             Add(Heading("Hotkey", 0), hotkey, Help("Click the box, then press the keys you want, like Ctrl+Alt+G."));
             Add(Heading("Search engine", S(14)), engine, address, Help("Use %s where your search text goes."));
+            Add(Heading("Bookmarks", S(14)), bookmarks,
+                Help("One per line: a name, a space, then its link. They show above the search box; Ctrl+1 to Ctrl+9 open the first nine."));
             Add(Heading("Shortcut words", S(14)), shortcuts,
                 Help("One per line: a word, a space, then its search address. Type the word before your search to use it, like \"yt cats\"."));
             Add(startup, error, buttons);
-            foreach (Control c in new Control[] { hotkey, engine, address, shortcuts }) { c.Width = width; c.Margin = new Padding(0, S(4), 0, 0); }
+            foreach (Control c in new Control[] { hotkey, engine, address, bookmarks, shortcuts }) { c.Width = width; c.Margin = new Padding(0, S(4), 0, 0); }
             Controls.Add(layout);
+        }
+
+        TextBox ListBox(string text)
+        {
+            return new TextBox { Multiline = true, AcceptsReturn = true, WordWrap = false, ScrollBars = ScrollBars.Both, Height = S(92), Text = text };
         }
 
         void Add(params Control[] controls)
@@ -147,6 +150,7 @@ namespace QuickSearch
             next.Hotkey = hotkey.Text;
             next.Engine = address.Text.Trim();
             var problem = Config.IsWebAddress(next.Engine) ? null : "The search address must start with https://";
+            if (problem == null) problem = Config.ParseBookmarks(bookmarks.Text, next.Bookmarks);
             if (problem == null) problem = Config.ParseShortcuts(shortcuts.Text, next.Shortcuts);
             if (problem == null) problem = apply(next, startup.Checked);
             if (problem == null) Close();

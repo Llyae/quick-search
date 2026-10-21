@@ -8,13 +8,19 @@ using Microsoft.Win32;
 
 namespace QuickSearch
 {
-    // The pop-up bar: a tag showing which site Enter goes to, then the text box.
+    // The pop-up bar: bookmarks row on top, then a tag showing which site Enter goes to and the text box.
     class SearchBar : Form
     {
         public Config Config;
         readonly HintTextBox input = new HintTextBox();
         readonly SiteTag tag = new SiteTag();
+        readonly FlowLayoutPanel bookmarks = new FlowLayoutPanel();
+        readonly ToolTip tip = new ToolTip();
+        readonly Font bookmarkFont;
         readonly float scale;
+        Config built; // the settings the bookmarks row was last built from
+        int bandTop; // where the search row starts, below the bookmarks
+        Color line;
         bool dark;
 
         public SearchBar(Config config)
@@ -31,6 +37,12 @@ namespace QuickSearch
             tag.Font = PickFont("Segoe UI Variable Small Semibold", "Segoe UI Semibold", 9.5f);
             input.Font = PickFont("Segoe UI Variable Text", "Segoe UI", 14f);
             input.BorderStyle = BorderStyle.None;
+            bookmarkFont = PickFont("Segoe UI Variable Small", "Segoe UI", 9.5f);
+            bookmarks.AutoSize = true;
+            bookmarks.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            bookmarks.MaximumSize = new Size(ClientSize.Width, 0); // wraps onto more lines instead of growing wider
+            bookmarks.Padding = new Padding(S(12), S(10), S(12), S(8));
+            Controls.Add(bookmarks);
             Controls.Add(tag);
             Controls.Add(input);
 
@@ -47,6 +59,7 @@ namespace QuickSearch
 
         public void ShowBar()
         {
+            if (built != Config) BuildBookmarks();
             ApplyTheme(); // picks up a light/dark switch made while the bar was hidden
             UpdateTag();
             SetPlaceholder();
@@ -58,18 +71,37 @@ namespace QuickSearch
             input.SelectAll(); // last search stays, ready to repeat or type over
         }
 
+        void BuildBookmarks()
+        {
+            built = Config;
+            while (bookmarks.Controls.Count > 0) bookmarks.Controls[0].Dispose();
+            for (int i = 0; i < Config.Bookmarks.Count; i++)
+            {
+                var link = Config.Bookmarks[i][1];
+                var button = new BookmarkButton { Text = Config.Bookmarks[i][0], Font = bookmarkFont, AccessibleDescription = link };
+                button.Margin = new Padding(S(2));
+                button.Size = new Size(Math.Min(S(190), S(42) + TextRenderer.MeasureText(button.Text, bookmarkFont).Width), S(30));
+                tip.SetToolTip(button, i < 9 ? link + "  (Ctrl+" + (i + 1) + ")" : link);
+                button.Click += delegate { Open(link); };
+                SiteIcons.Get(link, img => { button.Image = img; button.Invalidate(); });
+                bookmarks.Controls.Add(button);
+            }
+            bookmarks.Visible = Config.Bookmarks.Count > 0;
+        }
+
         void OnInputKey(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Enter) Go();
+            int n = e.KeyCode - Keys.D1;
+            if (e.KeyCode == Keys.Enter) Open(Config.BuildUrl(input.Text));
             else if (e.KeyCode == Keys.Escape) Hide();
             else if (e.KeyData == (Keys.Control | Keys.Back)) DeleteWordBack(); // the classic text box types a box character instead
+            else if (e.Modifiers == Keys.Control && n >= 0 && n < 9 && n < Config.Bookmarks.Count) Open(Config.Bookmarks[n][1]);
             else return;
             e.SuppressKeyPress = true;
         }
 
-        void Go()
+        void Open(string url)
         {
-            var url = Config.BuildUrl(input.Text);
             if (url == null) return;
             try
             {
@@ -100,11 +132,20 @@ namespace QuickSearch
             tag.Text = site ?? "Fix the search address in Settings";
             tag.Fill = site == null ? Color.FromArgb(0xC4, 0x31, 0x4B) : dark ? Color.FromArgb(0xF2, 0xB3, 0x3D) : Color.FromArgb(0xF5, 0xC4, 0x43);
             tag.ForeColor = site == null ? Color.White : Color.FromArgb(0x2E, 0x21, 0x00);
-            int pad = S(14), h = S(26);
-            tag.Bounds = new Rectangle(pad, (ClientSize.Height - h) / 2, TextRenderer.MeasureText(tag.Text, tag.Font).Width + S(18), h);
-            input.Location = new Point(tag.Right + S(12), (ClientSize.Height - input.Height) / 2);
+            int pad = S(14), h = S(26), band = S(56);
+            bandTop = bookmarks.Visible ? bookmarks.Bottom : 0;
+            tag.Bounds = new Rectangle(pad, bandTop + (band - h) / 2, TextRenderer.MeasureText(tag.Text, tag.Font).Width + S(18), h);
+            input.Location = new Point(tag.Right + S(12), bandTop + (band - input.Height) / 2);
             input.Width = ClientSize.Width - input.Left - pad;
+            ClientSize = new Size(ClientSize.Width, bandTop + band);
             tag.Invalidate();
+            Invalidate(); // divider line
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            if (bandTop > 0) using (var pen = new Pen(line)) e.Graphics.DrawLine(pen, 0, bandTop, ClientSize.Width, bandTop);
         }
 
         void SetPlaceholder()
@@ -124,6 +165,14 @@ namespace QuickSearch
             input.BackColor = tag.BackColor = BackColor;
             input.ForeColor = dark ? Color.FromArgb(0xEE, 0xF0, 0xF4) : Color.FromArgb(0x1C, 0x1F, 0x26);
             input.HintColor = dark ? Color.FromArgb(0x9A, 0xA0, 0xAC) : Color.FromArgb(0x6B, 0x72, 0x80);
+            line = dark ? Color.FromArgb(0x34, 0x38, 0x42) : Color.FromArgb(0xE6, 0xE8, 0xEC);
+            bookmarks.BackColor = BackColor;
+            foreach (BookmarkButton b in bookmarks.Controls)
+            {
+                b.ForeColor = input.ForeColor;
+                b.Fill = dark ? Color.FromArgb(0x2C, 0x30, 0x39) : Color.FromArgb(0xF0, 0xF1, 0xF4);
+                b.HoverFill = dark ? Color.FromArgb(0x38, 0x3D, 0x48) : Color.FromArgb(0xE3, 0xE5, 0xEA);
+            }
             int border = dark ? 0x4B3F3A : 0xE3DCD9; // 0x00BBGGRR: #3A3F4B dark, #D9DCE3 light
             Native.DwmSetWindowAttribute(Handle, 34 /* DWMWA_BORDER_COLOR */, ref border, 4);
         }
