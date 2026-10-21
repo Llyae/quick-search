@@ -59,18 +59,25 @@ namespace QuickSearch
             File.WriteAllText(path, sb.ToString());
         }
 
-        // The address to open for what was typed, or null if there's nothing to search or the address isn't a web link.
-        public string BuildUrl(string text)
+        // Which search address the typed text goes to, and the text left after any shortcut word.
+        public string PickAddress(string text, out string query)
         {
-            var query = (text ?? "").Trim();
-            var template = Engine;
+            query = (text ?? "").Trim();
             int space = query.IndexOf(' ');
             string shortcut;
             if (space > 0 && Shortcuts.TryGetValue(query.Substring(0, space), out shortcut))
             {
-                template = shortcut;
                 query = query.Substring(space + 1).Trim();
+                return shortcut;
             }
+            return Engine;
+        }
+
+        // The address to open for what was typed, or null if there's nothing to search or the address isn't a web link.
+        public string BuildUrl(string text)
+        {
+            string query;
+            var template = PickAddress(text, out query);
             if (query.Length == 0 || !IsWebAddress(template)) return null;
             var q = Uri.EscapeDataString(query);
             return template.Contains("%s") ? template.Replace("%s", q) : template + q;
@@ -83,6 +90,14 @@ namespace QuickSearch
                 || t.StartsWith("http://", StringComparison.OrdinalIgnoreCase);
         }
 
+        // "https://www.youtube.com/results?search_query=%s" -> "youtube.com", for the tag on the bar. Null if not a web address.
+        public static string SiteName(string address)
+        {
+            Uri uri;
+            if (!IsWebAddress(address) || !Uri.TryCreate(address.Replace("%s", ""), UriKind.Absolute, out uri)) return null;
+            return uri.Host.StartsWith("www.") ? uri.Host.Substring(4) : uri.Host;
+        }
+
         public string EngineName()
         {
             foreach (var e in Engines) if (e[1] == Engine) return e[0];
@@ -91,7 +106,7 @@ namespace QuickSearch
 
         public const uint ModAlt = 1, ModCtrl = 2, ModShift = 4, ModWin = 8;
 
-        // "Ctrl+Alt+G" -> modifier flags + key. Needs a modifier so the hotkey can't swallow normal typing.
+        // "Ctrl+Alt+G" -> modifier flags + key. Needs Ctrl, Alt or Win so the hotkey can't swallow normal typing.
         public static bool TryParseHotkey(string text, out uint mods, out Keys key)
         {
             mods = 0;
@@ -112,7 +127,7 @@ namespace QuickSearch
             var code = key & Keys.KeyCode;
             bool isModifierKey = code == Keys.ShiftKey || code == Keys.ControlKey || code == Keys.Menu
                 || code == Keys.LWin || code == Keys.RWin;
-            return mods != 0 && key == code && code != Keys.None && !isModifierKey;
+            return (mods & ~ModShift) != 0 && key == code && code != Keys.None && !isModifierKey;
         }
 
         // Key press from a KeyDown event -> "Ctrl+Alt+Shift+Key" text that TryParseHotkey reads back.

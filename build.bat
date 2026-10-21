@@ -8,6 +8,5 @@ if not exist bin mkdir bin
 "%CSC%" /nologo /out:bin\Tests.exe src\Config.cs tests\Tests.cs || exit /b 1
 bin\Tests.exe || exit /b 1
 
-if not exist src\Program.cs exit /b 0
 "%CSC%" /nologo /target:winexe /optimize /win32icon:assets\icon.ico /resource:assets\icon.ico,icon.ico /out:bin\QuickSearch.exe src\*.cs || exit /b 1
 echo Built bin\QuickSearch.exe

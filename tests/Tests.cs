@@ -39,12 +39,22 @@ namespace QuickSearch
             c.Engine = "file:///C:/x?q=%s";
             Same(null, c.BuildUrl("x"), "file address refused");
 
+            var plain = new Config();
+            Same("google.com", Config.SiteName(plain.Engine), "site name drops www");
+            Same("en.wikipedia.org", Config.SiteName(plain.Shortcuts["w"]), "site name keeps subdomain");
+            string rest;
+            Same("youtube.com", Config.SiteName(plain.PickAddress("yt lofi", out rest)), "tag follows shortcut word");
+            Same("lofi", rest, "shortcut word removed from search text");
+            Same(null, Config.SiteName("calc.exe %s"), "no site name for non-web address");
+            Same(null, Config.SiteName("https://"), "no site name for broken address");
+
             uint mods; Keys key;
             Check(Config.TryParseHotkey("Alt+Shift+Space", out mods, out key) && mods == (Config.ModAlt | Config.ModShift) && key == Keys.Space, "parse Alt+Shift+Space");
             Check(Config.TryParseHotkey(" ctrl + alt + g ", out mods, out key) && mods == (Config.ModCtrl | Config.ModAlt) && key == Keys.G, "parse with spaces and lowercase");
             Check(Config.TryParseHotkey("Win+Shift+F5", out mods, out key) && mods == (Config.ModWin | Config.ModShift) && key == Keys.F5, "parse Win and F-keys");
             Check(!Config.TryParseHotkey("G", out mods, out key), "reject key without modifier");
             Check(!Config.TryParseHotkey("Ctrl+Shift", out mods, out key), "reject modifiers only");
+            Check(!Config.TryParseHotkey("Shift+A", out mods, out key), "reject Shift alone (would break typing capitals)");
             Check(!Config.TryParseHotkey("Ctrl+ShiftKey", out mods, out key), "reject modifier as the key");
             Check(!Config.TryParseHotkey("Ctrl+Banana", out mods, out key), "reject unknown key");
             Check(!Config.TryParseHotkey("Hyper+G", out mods, out key), "reject unknown modifier");
