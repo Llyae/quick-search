@@ -66,6 +66,7 @@ namespace QuickSearch
         readonly SearchBar bar;
         readonly NotifyIcon tray = new NotifyIcon();
         readonly Listener listener;
+        SettingsForm settings;
 
         public App()
         {
@@ -79,6 +80,7 @@ namespace QuickSearch
 
             var menu = new ContextMenuStrip();
             menu.Items.Add("Search", null, delegate { bar.ShowBar(); }).Font = new Font(menu.Font, FontStyle.Bold);
+            menu.Items.Add("Settings", null, delegate { ShowSettings(); });
             menu.Items.Add("Quit", null, delegate { Quit(); });
             tray.ContextMenuStrip = menu;
             tray.Icon = Program.AppIcon(SystemInformation.SmallIconSize);
@@ -89,7 +91,10 @@ namespace QuickSearch
             if (loadError != null)
                 tray.ShowBalloonTip(8000, "Couldn't read your settings", "Using the defaults for now. " + loadError, ToolTipIcon.Warning);
             else if (!RegisterHotkey(config.Hotkey))
-                tray.ShowBalloonTip(8000, "Quick Search can't use " + config.Hotkey, "Another app already uses it. Pick a different hotkey in Settings.", ToolTipIcon.Warning);
+            {
+                tray.ShowBalloonTip(8000, "Quick Search can't use " + config.Hotkey, "Another app may already use it. Pick a different hotkey in Settings.", ToolTipIcon.Warning);
+                ShowSettings();
+            }
             else if (firstRun)
             {
                 tray.ShowBalloonTip(8000, "Quick Search is running", "Press " + config.Hotkey + " to search the web.", ToolTipIcon.None);
@@ -104,6 +109,41 @@ namespace QuickSearch
             Keys key;
             return Config.TryParseHotkey(text, out mods, out key)
                 && Native.RegisterHotKey(listener.Handle, HotkeyId, mods | 0x4000 /* MOD_NOREPEAT */, (uint)key);
+        }
+
+        void ShowSettings()
+        {
+            if (settings == null || settings.IsDisposed) settings = new SettingsForm(config, Apply, PauseHotkey);
+            settings.Show();
+            settings.Activate();
+        }
+
+        // Settings' Save button. Returns a problem to show, or null once the new settings are live and saved.
+        string Apply(Config next, bool startWithWindows)
+        {
+            if (!RegisterHotkey(next.Hotkey))
+            {
+                RegisterHotkey(config.Hotkey);
+                return next.Hotkey + " is already used by another app. Pick a different hotkey.";
+            }
+            try
+            {
+                next.Save(Config.DefaultPath);
+                Program.StartsWithWindows = startWithWindows;
+            }
+            catch (Exception ex)
+            {
+                RegisterHotkey(config.Hotkey);
+                return "Couldn't save your settings: " + ex.Message;
+            }
+            config = bar.Config = next;
+            return null;
+        }
+
+        void PauseHotkey(bool paused)
+        {
+            if (paused) Native.UnregisterHotKey(listener.Handle, HotkeyId);
+            else RegisterHotkey(config.Hotkey);
         }
 
         void Quit()

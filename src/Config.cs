@@ -98,6 +98,31 @@ namespace QuickSearch
             return uri.Host.StartsWith("www.") ? uri.Host.Substring(4) : uri.Host;
         }
 
+        // Settings box text: one "word address" per line.
+        public static string ShortcutsText(SortedDictionary<string, string> shortcuts)
+        {
+            var sb = new StringBuilder();
+            foreach (var s in shortcuts) sb.Append(s.Key + " " + s.Value + "\r\n");
+            return sb.ToString();
+        }
+
+        // Reads the settings box back. Returns a problem to show the user, or null when every line was fine.
+        public static string ParseShortcuts(string text, SortedDictionary<string, string> into)
+        {
+            into.Clear();
+            var lines = (text ?? "").Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                if (line.Length == 0) continue;
+                var parts = line.Split((char[])null, 2, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2 || parts[0].Contains("=") || !IsWebAddress(parts[1].Trim()))
+                    return "Shortcut line " + (i + 1) + " needs a word, a space, then an address starting with https://";
+                into[parts[0]] = parts[1].Trim();
+            }
+            return null;
+        }
+
         public string EngineName()
         {
             foreach (var e in Engines) if (e[1] == Engine) return e[0];

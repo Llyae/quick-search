@@ -63,6 +63,15 @@ namespace QuickSearch
             Same("Alt+Shift+Space", Config.FormatHotkey(Keys.Alt | Keys.Shift | Keys.Space), "format matches parse");
             Same("Ctrl+Alt+G", Config.FormatHotkey(Keys.G | Keys.Alt | Keys.Control), "format orders modifiers");
 
+            var parsed = new System.Collections.Generic.SortedDictionary<string, string>();
+            Same(null, Config.ParseShortcuts("\r\n  yt    https://www.youtube.com/results?search_query=%s  \r\n\r\nmaps https://www.google.com/maps/search/%s", parsed), "shortcut box parses with extra spaces and blank lines");
+            Check(parsed.Count == 2 && parsed["maps"] == "https://www.google.com/maps/search/%s", "shortcut box values trimmed");
+            Check(Config.ParseShortcuts("yt\r\nw https://x.test/%s", parsed) == "Shortcut line 1 needs a word, a space, then an address starting with https://", "word without address reported by line");
+            Check(Config.ParseShortcuts("w https://x.test/%s\r\nbad calc.exe", parsed) != null, "non-web shortcut address rejected");
+            Check(Config.ParseShortcuts("a=b https://x.test/%s", parsed) != null, "word with = rejected (would break the settings file)");
+            Same(null, Config.ParseShortcuts(Config.ShortcutsText(plain.Shortcuts), parsed), "shortcut box round trip");
+            Check(parsed.Count == 3 && parsed["gh"] == plain.Shortcuts["gh"], "shortcut box round trip keeps values");
+
             var path = Path.Combine(Path.GetTempPath(), "quicksearch-test-" + Guid.NewGuid() + ".txt");
             try
             {
